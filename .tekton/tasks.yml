@@ -1,0 +1,86 @@
+---
+
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: cleanup
+spec:
+  descripion: This task will clean up a workspace by deleting all the files.
+  workspaces:
+    - name: source
+  steps:
+    - name: remove
+      image: alpine:3
+      env:
+        - name: WORKSPACE_SOURCE_PATH
+          value: $(workspaces.source.path)
+      workingDir: $(workspaces.source.path)
+      securityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+      script:  | #!/usr/bin/env sh
+                  set -eu
+                  echo "Removendo todos os arquivos de ${WORKSPACE_SOURCE_PATH} ..."
+                  # Exclui qualquer conteúdo existente do diretório, se existir.
+                  #
+                  # Não usamos apenas "rm -rf ${WORKSPACE_SOURCE_PATH}" porque ${WORKSPACE_SOURCE_PATH} pode ser "/"
+                  # ou a raiz de um volume montado.
+                  if [ -d "${WORKSPACE_SOURCE_PATH}" ] ; then
+                    # Exclui arquivos e diretórios não ocultos
+                    rm -rf "${WORKSPACE_SOURCE_PATH:?}"/*
+                    # Exclui arquivos e diretórios que começam com . mas exclui ..
+                    rm -rf "${WORKSPACE_SOURCE_PATH}"/.[!.]*
+                    # Exclui arquivos e diretórios que começam com .. mais qualquer outro caractere
+                    rm -rf "${WORKSPACE_SOURCE_PATH}"/..?*
+                  fi
+---
+
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: eslint
+spec:
+  workspaces:
+    - name: source
+  params:
+    - name: args
+      description: Argumentos a serem passados para o ESLint
+      type: string
+      default: "src/ tests/ --ext *.js"
+  steps:
+    - name: lint
+      image: node:20-alpine
+      workingDir: $(workspaces.source.path)
+      script: |
+              #!/bin/sh
+              set -e
+              echo "Instalando dependências..."
+              npm ci
+              echo "Executando ESLint..."
+              npm run lint $(params.args)
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: jest-test
+spec:
+  workspaces:
+    - name: source
+  params:
+    - name: args
+      description: Argumentos a serem passados para o jest
+      type: string
+      default: "-v"
+  steps:
+    - name: jest
+      image: node:20-alpine
+      workingDir: $(workspaces.source.path)
+      script: |
+                #!/bin/sh
+                set -e
+                echo "Instalando dependências..."
+                npm ci
+                echo "Executando testes Jest..."
+                npm test $(params.args)
